@@ -1,0 +1,40 @@
+---
+description: 线下培训全周期游戏化互动平台 — 实施计划与进度
+---
+
+# 实施计划
+
+## Step 1 — 竞品与定位文档化
+
+**Done**  
+- 已写入 `docs/competitive-positioning.md`，明确 vs Slido / Kahoot / 企学宝等的差异化（全周期数据主线 + 现场优先 + 游戏化引擎）。
+
+## Step 2 — 角色与场景优先级
+
+**Done**  
+- 已写入 `docs/roles-and-scenarios.md`，P0 为企业内训线下班中的讲师与学员。
+
+## Step 3 — 技术栈确认
+
+**Done**  
+- 已写入 `docs/tech-stack-decisions.md`；仓库已采用 Next.js + Tailwind + shadcn/ui + Prisma + PostgreSQL。
+
+## Step 4 — MVP 边界
+
+**Done**  
+- 已写入 `docs/mvp-scope.md`，首期聚焦训中现场与基础游戏化。
+
+## Step 5 — 核心数据模型
+
+**Done**  
+- `prisma/schema.prisma` 定义 `Organization`、`User`、`OrganizationMembership`、`TrainingProgram`、`LiveSession`、`Participant`、`Activity`、`ActivityResponse`、`Score`、`Achievement`、`ParticipantAchievement`。
+
+## Step 6 — 项目初始化
+
+**Done**  
+- Next.js 应用、shadcn/ui、`lib/prisma.ts`、`.env.example`、`vitest` 与 `generateJoinCode` 单元测试、知识库 `cursor_project_rules/`。
+
+## Step 7 — 现场路由骨架（后续迭代）
+
+- [ ] `/session/[joinCode]/presenter`、`/display` 布局与 WebSocket 房间。  
+- [ ] 创建会话 API + QR 静态生成。  

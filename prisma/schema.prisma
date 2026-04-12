@@ -1,0 +1,213 @@
+// Multi-tenant training gamification platform — core persistence model.
+// All tenant-scoped resources include organizationId for isolation.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  TRAINER
+  VIEWER
+}
+
+enum LiveSessionStatus {
+  DRAFT
+  LIVE
+  ENDED
+}
+
+enum ActivityType {
+  SIGN_IN
+  ICE_BREAKER
+  POLL
+  WORD_CLOUD
+  QA
+  QUIZ
+}
+
+enum TrainingProgramPhase {
+  PRE
+  DURING
+  POST
+}
+
+/// Tenant boundary (enterprise, agency, school, etc.).
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships      OrganizationMembership[]
+  liveSessions     LiveSession[]
+  trainingPrograms TrainingProgram[]
+}
+
+/// Authenticated account; may belong to multiple organizations.
+model User {
+  id           String    @id @default(cuid())
+  email        String?   @unique
+  displayName  String?
+  isPlatformAdmin Boolean @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  memberships      OrganizationMembership[]
+  participantJoins Participant[]
+  hostedSessions     LiveSession[]            @relation("SessionHost")
+  createdPrograms    TrainingProgram[]        @relation("ProgramCreator")
+}
+
+/// RBAC within a single tenant.
+model OrganizationMembership {
+  id             String         @id @default(cuid())
+  organizationId String
+  userId         String
+  role           MembershipRole @default(TRAINER)
+  createdAt      DateTime       @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+/// Optional wrapper for pre / during / post assets and reporting.
+model TrainingProgram {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  description    String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?         @relation("ProgramCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  liveSessions LiveSession[]
+}
+
+/// One interactive room (Slido-style session) bound to a tenant.
+model LiveSession {
+  id               String            @id @default(cuid())
+  organizationId   String
+  trainingProgramId String?
+  hostUserId       String
+  joinCode         String            @unique
+  title            String
+  status           LiveSessionStatus   @default(DRAFT)
+  phase            TrainingProgramPhase @default(DURING)
+  scheduledStartAt DateTime?
+  scheduledEndAt   DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  trainingProgram TrainingProgram? @relation(fields: [trainingProgramId], references: [id], onDelete: SetNull)
+  hostUser       User            @relation("SessionHost", fields: [hostUserId], references: [id], onDelete: Restrict)
+
+  activities   Activity[]
+  participants Participant[]
+  scores       Score[]
+
+  @@index([organizationId])
+  @@index([hostUserId])
+}
+
+/// Someone in the room — may be anonymous (userId null) or linked to User.
+model Participant {
+  id            String    @id @default(cuid())
+  liveSessionId String
+  userId        String?
+  displayName   String
+  joinedAt      DateTime  @default(now())
+
+  liveSession LiveSession @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  responses   ActivityResponse[]
+  scores      Score[]
+  achievements ParticipantAchievement[]
+
+  @@index([liveSessionId])
+}
+
+/// Ordered interactive unit inside a session (poll, quiz, Q&A, etc.).
+model Activity {
+  id            String       @id @default(cuid())
+  liveSessionId String
+  type          ActivityType
+  title         String
+  /// JSON: options, timers, scoring rules, branching hints.
+  config        Json
+  position      Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  liveSession LiveSession @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
+  responses   ActivityResponse[]
+
+  @@index([liveSessionId, position])
+}
+
+model ActivityResponse {
+  id            String   @id @default(cuid())
+  participantId String
+  activityId    String
+  payload       Json
+  createdAt     DateTime @default(now())
+
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  activity    Activity    @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([participantId, activityId])
+  @@index([activityId])
+}
+
+/// Gamification aggregate per participant per session (leaderboards).
+model Score {
+  id            String   @id @default(cuid())
+  participantId String
+  liveSessionId String
+  points        Int      @default(0)
+  streakCount   Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  liveSession LiveSession @relation(fields: [liveSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([participantId, liveSessionId])
+  @@index([liveSessionId, points])
+}
+
+/// Catalog row for unlockable badges / milestones.
+model Achievement {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  rule        Json?
+  createdAt   DateTime @default(now())
+
+  participants ParticipantAchievement[]
+}
+
+model ParticipantAchievement {
+  participantId String
+  achievementId String
+  earnedAt      DateTime @default(now())
+
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@id([participantId, achievementId])
+}
